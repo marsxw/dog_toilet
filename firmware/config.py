@@ -11,6 +11,7 @@ DEFAULTS = {
     "wifi_timeout_s": 1800,
     "sample_ms": 50,
     "lang": "zh",
+    "bench_mode": False,
 }
 
 
@@ -49,6 +50,7 @@ def sanitize(cfg):
     out["sample_ms"] = int(_clamp_num(out.get("sample_ms", 50), 20, 500, 50))
     lang = str(out.get("lang") or "zh").lower()
     out["lang"] = "en" if lang.startswith("en") else "zh"
+    out["bench_mode"] = bool(out.get("bench_mode"))
     for key in (
         "threshold_cm",
         "confirm_window_s",

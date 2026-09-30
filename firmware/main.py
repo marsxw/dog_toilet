@@ -1,10 +1,17 @@
 import asyncio
 import json
 import time
-from machine import Pin
+from config import DEFAULTS, load_config, save_config
 
-from config import DEFAULTS, detector_cfg, load_config, save_config
+_cfg_boot = load_config()
+if _cfg_boot.get("bench_mode"):
+    from bench import run_bench
+
+    run_bench()
+
+from config import detector_cfg
 from detector import Detector, remain_s
+from ir_input import is_present, make_ir_pin
 from motor import IR_PIN, MOTOR_PAUSE_S, MOTOR_RUN_S, Motor
 from web import WebServer, start_ap, stop_ap
 
@@ -24,7 +31,7 @@ class App:
         self._wait_start_ms = 0
         self._wait_ms = 0
         self.motor = Motor()
-        self.ir = Pin(IR_PIN, Pin.IN, Pin.PULL_UP)
+        self.ir = make_ir_pin(IR_PIN)
 
     def status(self):
         timeout_ms = int(self.cfg["wifi_timeout_s"]) * 1000
@@ -120,7 +127,7 @@ class App:
         while True:
             if not self._flushing:
                 try:
-                    present = self.ir.value() == 0
+                    present = is_present(self.ir.value())
                     self.ir_present = present
                     self.error = ""
                     event = self.detector.tick(present, time.ticks_ms())

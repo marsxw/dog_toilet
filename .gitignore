@@ -4,4 +4,5 @@ venv/
 .DS_Store
 Thumbs.db
 firmware/config.json
+firmware/*.bin
 PCB/YD-ESP32-23/.git/

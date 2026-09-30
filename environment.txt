@@ -1,0 +1,73 @@
+# dog_toilet PC 开发环境快照（environment 1）
+# 生成日期：2026-09-30
+# 用途：刷 ESP32-S3 固件（esptool/mpremote）、运行 bench_gui 上位机
+
+================================================================================
+一、环境复现步骤（Windows + PowerShell）
+================================================================================
+
+1. 安装 Python 3.10+（本机导出时为 Python 3.14.5；3.10–3.12 均可，需已加入 PATH）
+
+2. 进入项目根目录并创建虚拟环境：
+
+   cd c:\Users\Siven\Desktop\dog_toilet
+   python -m venv venv
+
+3. 激活虚拟环境：
+
+   .\venv\Scripts\Activate.ps1
+
+   若提示无法执行脚本，可先（当前用户、一次性）：
+   Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+
+4. 安装依赖（与下方 pip freeze 一致）：
+
+   pip install --upgrade pip
+   pip install -r requirements.txt
+
+   或最小安装（仅上位机 + 烧录工具）：
+   pip install pyserial esptool mpremote
+
+5. 验证：
+
+   python bench_gui\app.py
+   mpremote --help
+   esptool version
+
+6. 说明：
+   - venv/ 目录不要提交 Git（已在 .gitignore）
+   - MicroPython 系统固件 .bin 见 README，需自行放在 firmware/ 或从 micropython.org 下载
+   - 板端 Python 文件上传见 README「上传 Python 到板子」
+
+================================================================================
+二、本机 Python 版本
+================================================================================
+
+Python 3.14.5
+
+================================================================================
+三、pip freeze（完整锁定，requirements.txt 与此一致）
+================================================================================
+
+bitarray==3.11.0
+bitstring==4.4.0
+cffi==2.1.1
+click==8.5.0
+colorama==0.4.6
+cryptography==50.0.1
+esp-pylib==1.1.5
+esptool==5.4.0
+intelhex==2.3.0
+markdown-it-py==4.2.0
+mdurl==0.1.2
+mpremote==1.29.0
+platformdirs==4.12.1
+pycparser==3.0
+Pygments==2.21.0
+pyserial==3.5
+PyYAML==6.0.3
+reedsolo==1.7.0
+rich==15.0.0
+rich-click==1.9.9
+tibs==0.5.7
+websockets==17.1
