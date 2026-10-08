@@ -39,6 +39,7 @@ cd c:\Users\Siven\Desktop\dog_toilet\firmware
 ..\venv\Scripts\mpremote.exe connect COM3 cp bench.py :bench.py
 ..\venv\Scripts\mpremote.exe connect COM3 cp pins.py :pins.py
 ..\venv\Scripts\mpremote.exe connect COM3 cp motor.py :motor.py
+..\venv\Scripts\mpremote.exe connect COM3 cp servo_ctrl.py :servo_ctrl.py
 ..\venv\Scripts\mpremote.exe connect COM3 cp config.py :config.py
 ..\venv\Scripts\mpremote.exe connect COM3 cp detector.py :detector.py
 ..\venv\Scripts\mpremote.exe connect COM3 cp web.py :web.py

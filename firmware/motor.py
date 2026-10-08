@@ -1,75 +1,102 @@
-from machine import Pin, PWM
+from machine import ADC, Pin
+import time
 
-from pins import PIN_CRUSH, PIN_IR, PIN_IREF, PIN_MOTOR_H, PIN_MOTOR_L
+from pins import PIN_CRUSH_IN1, PIN_CRUSH_IN2, PIN_IADC, PIN_IR
 
 IR_PIN = PIN_IR
 
-# 调试用：在 PC 界面测好占空比后改此常量（0–100 %）
-PRESS_PWM_DUTY_PCT = 25.0
-
-PRESS_PWM_FREQ_HZ = 1000
-MOTOR_PAUSE_S = 1
-MOTOR_RUN_S = 1
-
-
-def _pct_to_u16(pct):
-    pct = max(0.0, min(100.0, float(pct)))
-    return int(pct * 65535 / 100.0 + 0.5)
+# I = V_adc / (R_sense * gain) = V_adc / 1.05
+R_SENSE_OHM = 0.1
+I_GAIN = 10.5
+I_OVERCURRENT_A = 4.0
+I_SAMPLES = 32
+I_TRIM = 6
+I_EMA_ALPHA = 0.18
 
 
-class PressMotor:
-    def __init__(
-        self,
-        pin_iref=PIN_IREF,
-        pin_h=PIN_MOTOR_H,
-        pin_l=PIN_MOTOR_L,
-        freq_hz=PRESS_PWM_FREQ_HZ,
-        duty_pct=PRESS_PWM_DUTY_PCT,
-    ):
-        self._duty_pct = float(duty_pct)
-        self.pwm = PWM(Pin(int(pin_iref)), freq=int(freq_hz))
-        self.h = Pin(int(pin_h), Pin.OUT)
-        self.l = Pin(int(pin_l), Pin.OUT)
-        self.set_duty_pct(self._duty_pct)
-        self.stop()
+def adc_volts_to_amps(volts):
+    denom = R_SENSE_OHM * I_GAIN
+    if denom <= 0:
+        return 0.0
+    return float(volts) / denom
 
-    def set_duty_pct(self, pct):
-        self._duty_pct = max(0.0, min(100.0, float(pct)))
-        self.pwm.duty_u16(_pct_to_u16(self._duty_pct))
 
-    def duty_pct(self):
-        return self._duty_pct
+class MotorCurrent:
+    def __init__(self, pin=PIN_IADC):
+        self.pin_num = int(pin)
+        self.adc = ADC(Pin(self.pin_num))
+        self.adc.atten(ADC.ATTN_11DB)
+        try:
+            self.adc.width(ADC.WIDTH_12BIT)
+        except (AttributeError, ValueError):
+            pass
+        self._ema_v = None
 
-    def forward(self):
-        self.l.value(0)
-        self.h.value(1)
+    def _read_volts_once(self):
+        try:
+            return self.adc.read_uv() / 1e6
+        except AttributeError:
+            return self.adc.read() * 3.3 / 4095.0
 
-    def reverse(self):
-        self.h.value(0)
-        self.l.value(1)
+    def raw(self):
+        return self.adc.read()
 
-    def stop(self):
-        self.h.value(0)
-        self.l.value(0)
+    def voltage(self):
+        return self.read()[0]
 
-    def down(self):
-        self.forward()
+    def amps(self, samples=I_SAMPLES):
+        return self.read(samples)[1]
 
-    def up(self):
-        self.reverse()
+    def read(self, samples=I_SAMPLES):
+        n = int(samples)
+        if n < 1:
+            n = 1
+        vals = []
+        for _ in range(n):
+            vals.append(self._read_volts_once())
+            time.sleep_us(40)
+        vals.sort()
+        trim = I_TRIM if n > I_TRIM * 2 + 4 else 0
+        if trim:
+            vals = vals[trim : n - trim]
+        acc = 0.0
+        for v in vals:
+            acc += v
+        burst = acc / len(vals)
+        if self._ema_v is None:
+            self._ema_v = burst
+        else:
+            self._ema_v = I_EMA_ALPHA * burst + (1.0 - I_EMA_ALPHA) * self._ema_v
+        a = adc_volts_to_amps(self._ema_v)
+        raw = int(self._ema_v / 3.3 * 4095.0 + 0.5)
+        if raw < 0:
+            raw = 0
+        return self._ema_v, a, raw
 
 
 class CrushMotor:
-    def __init__(self, pin=PIN_CRUSH):
-        self.out = Pin(int(pin), Pin.OUT)
+    def __init__(self, pin_in1=PIN_CRUSH_IN1, pin_in2=PIN_CRUSH_IN2):
+        self.in1 = Pin(int(pin_in1), Pin.OUT)
+        self.in2 = Pin(int(pin_in2), Pin.OUT)
         self.off()
 
     def on(self):
-        self.out.value(1)
+        self.forward()
+
+    def forward(self):
+        self.in2.value(0)
+        self.in1.value(1)
+
+    def reverse(self):
+        self.in1.value(0)
+        self.in2.value(1)
 
     def off(self):
-        self.out.value(0)
+        self.in1.value(0)
+        self.in2.value(0)
 
+    def stop(self):
+        self.off()
 
-# 兼容旧名
-Motor = PressMotor
+    def is_on(self):
+        return bool(self.in1.value() or self.in2.value())

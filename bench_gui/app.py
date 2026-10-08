@@ -1,5 +1,5 @@
 """
-按压 PWM / 粉碎电机 调试界面（Windows）。
+舵机冲水 / 粉碎电机 / 电流 调试界面（Windows）。
 
   cd bench_gui
   python -m venv ..\\venv
@@ -113,7 +113,7 @@ class App(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("狗厕所 PCB 电机调试")
-        self.minsize(420, 380)
+        self.minsize(440, 520)
         self.bench = SerialBench()
         self._crush_on = False
         self._poll_job = None
@@ -134,64 +134,71 @@ class App(tk.Tk):
         self.conn_label = ttk.Label(frm, text="未连接", foreground="#888")
         self.conn_label.pack(anchor=tk.W)
 
-        ir_fr = ttk.LabelFrame(frm, text="红外输入", padding=8)
+        ir_fr = ttk.LabelFrame(frm, text="红外输入 (GPIO1 数字)", padding=8)
         ir_fr.pack(fill=tk.X, pady=8)
         self.ir_label = ttk.Label(ir_fr, text="—", wraplength=380)
         self.ir_label.pack(anchor=tk.W)
-        ir_btns = ttk.Frame(ir_fr)
-        ir_btns.pack(anchor=tk.W, pady=(6, 0))
-        ttk.Label(ir_btns, text="GPIO").pack(side=tk.LEFT)
-        self.ir_gpio_var = tk.StringVar(value="1")
-        ttk.Entry(ir_btns, textvariable=self.ir_gpio_var, width=5).pack(side=tk.LEFT, padx=4)
-        ttk.Button(ir_btns, text="切换 IRPIN", command=self.set_ir_pin).pack(side=tk.LEFT, padx=4)
-        ttk.Button(ir_btns, text="扫描 GPIO", command=self.scan_ir).pack(side=tk.LEFT)
         ttk.Label(
             ir_fr,
-            text="触发时 raw/adc 应有变化；若全不变，点扫描找会变的编号并切换 IRPIN。",
+            text="固定读 GPIO1。遮住应为 raw=0、present=1；移开应为 raw=1、present=0。",
             wraplength=380,
             foreground="#555",
         ).pack(anchor=tk.W, pady=(4, 0))
 
-        pwm_fr = ttk.LabelFrame(frm, text="按压电机 PWM (GPIO10 IREF)", padding=8)
-        pwm_fr.pack(fill=tk.X, pady=8)
-        self.pwm_var = tk.DoubleVar(value=25.0)
-        ttk.Label(pwm_fr, text="占空比 %").grid(row=0, column=0, sticky=tk.W)
-        self.pwm_scale = ttk.Scale(
-            pwm_fr,
+        servo_fr = ttk.LabelFrame(frm, text="冲水舵机 (GPIO13)", padding=8)
+        servo_fr.pack(fill=tk.X, pady=8)
+        self.servo_var = tk.DoubleVar(value=20.0)
+        ttk.Label(servo_fr, text="角度 °").grid(row=0, column=0, sticky=tk.W)
+        self.servo_scale = ttk.Scale(
+            servo_fr,
             from_=0,
-            to=100,
-            variable=self.pwm_var,
+            to=180,
+            variable=self.servo_var,
             orient=tk.HORIZONTAL,
-            command=self._on_pwm_slide,
+            command=self._on_servo_slide,
         )
-        self.pwm_scale.grid(row=0, column=1, sticky=tk.EW, padx=8)
-        pwm_fr.columnconfigure(1, weight=1)
-        self.pwm_entry = ttk.Entry(pwm_fr, width=8)
-        self.pwm_entry.insert(0, "25.0")
-        self.pwm_entry.grid(row=0, column=2)
-        ttk.Button(pwm_fr, text="应用", command=self.apply_pwm).grid(row=0, column=3, padx=4)
-        self.est_v_label = ttk.Label(pwm_fr, text="估算母线等效: 24V × 占空比 = 6.00 V（仅参考，请以万用表为准）")
-        self.est_v_label.grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
-        self.pwm_reply = ttk.Label(pwm_fr, text="", foreground="#006")
-        self.pwm_reply.grid(row=2, column=0, columnspan=4, sticky=tk.W)
+        self.servo_scale.grid(row=0, column=1, sticky=tk.EW, padx=8)
+        servo_fr.columnconfigure(1, weight=1)
+        self.servo_entry = ttk.Entry(servo_fr, width=8)
+        self.servo_entry.insert(0, "20.0")
+        self.servo_entry.grid(row=0, column=2)
+        ttk.Button(servo_fr, text="应用", command=self.apply_servo).grid(row=0, column=3, padx=4)
+        servo_btns = ttk.Frame(servo_fr)
+        servo_btns.grid(row=1, column=0, columnspan=4, sticky=tk.W, pady=(8, 0))
+        ttk.Button(servo_btns, text="冲水 PRESS", command=lambda: self.send_simple("PRESS")).pack(
+            side=tk.LEFT, padx=4
+        )
+        ttk.Button(servo_btns, text="回位 RELEASE", command=lambda: self.send_simple("RELEASE")).pack(
+            side=tk.LEFT, padx=4
+        )
+        self.servo_reply = ttk.Label(servo_fr, text="默认回位 20°、冲水 90°，可在 firmware/servo_ctrl.py 改。", foreground="#006")
+        self.servo_reply.grid(row=2, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
 
-        dir_fr = ttk.LabelFrame(frm, text="按压方向 (GPIO11 H / GPIO12 L)", padding=8)
-        dir_fr.pack(fill=tk.X, pady=8)
-        bf = ttk.Frame(dir_fr)
-        bf.pack()
-        ttk.Button(bf, text="正转 FWD", command=lambda: self.send_simple("FWD")).pack(side=tk.LEFT, padx=4)
-        ttk.Button(bf, text="反转 REV", command=lambda: self.send_simple("REV")).pack(side=tk.LEFT, padx=4)
-        ttk.Button(bf, text="停止 STOP", command=lambda: self.send_simple("STOP")).pack(side=tk.LEFT, padx=4)
-
-        crush_fr = ttk.LabelFrame(frm, text="粉碎电机 (GPIO9 MOTOR_24V)", padding=8)
+        crush_fr = ttk.LabelFrame(frm, text="粉碎电机 (GPIO11 IN1 / GPIO12 IN2)", padding=8)
         crush_fr.pack(fill=tk.X, pady=8)
-        self.crush_btn = ttk.Button(crush_fr, text="粉碎：关", command=self.toggle_crush)
-        self.crush_btn.pack(anchor=tk.W)
+        bf = ttk.Frame(crush_fr)
+        bf.pack(anchor=tk.W)
+        self.crush_btn = ttk.Button(bf, text="粉碎：关", command=self.toggle_crush)
+        self.crush_btn.pack(side=tk.LEFT, padx=4)
+        ttk.Button(bf, text="正转 FWD", command=lambda: self._crush_dir("FWD")).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bf, text="反转 REV", command=lambda: self._crush_dir("REV")).pack(side=tk.LEFT, padx=4)
+        ttk.Button(bf, text="停止 STOP", command=lambda: self._crush_dir("STOP")).pack(side=tk.LEFT, padx=4)
+
+        i_fr = ttk.LabelFrame(frm, text="电机电流 (GPIO3 ADC，0.1Ω × 10.5)", padding=8)
+        i_fr.pack(fill=tk.X, pady=8)
+        self.i_label = ttk.Label(i_fr, text="—", wraplength=400)
+        self.i_label.pack(anchor=tk.W)
+        ttk.Label(
+            i_fr,
+            text="I = Vadc / 1.05。超过 4A 会自动停粉碎电机。读数已做均值+滤波。",
+            wraplength=400,
+            foreground="#555",
+        ).pack(anchor=tk.W, pady=(4, 0))
 
         note = ttk.Label(
             frm,
-            text="测好占空比后，把 firmware/motor.py 里的 PRESS_PWM_DUTY_PCT 改成你的值。",
-            wraplength=400,
+            text="测好舵机角度后，把 firmware/servo_ctrl.py 里的 RELEASE_DEG / PRESS_DEG 改成你的值。",
+            wraplength=420,
         )
         note.pack(anchor=tk.W, pady=(12, 0))
 
@@ -221,14 +228,19 @@ class App(tk.Tk):
         self._stop_poll()
         if self._crush_on:
             try:
-                self.bench.command("CRUSH 0")
+                self.bench.command("STOP")
             except RuntimeError:
                 pass
-            self._crush_on = False
-            self.crush_btn.config(text="粉碎：关")
+            self._set_crush_ui(False)
+        try:
+            if self.bench.connected:
+                self.bench.command("RELEASE")
+        except RuntimeError:
+            pass
         self.bench.close()
         self.conn_label.config(text="未连接", foreground="#888")
         self.ir_label.config(text="—")
+        self.i_label.config(text="—")
 
     def _start_poll(self):
         self._poll_ir()
@@ -246,115 +258,83 @@ class App(tk.Tk):
             self.ir_label.config(text=line)
         except RuntimeError:
             pass
+        try:
+            i_line = self.bench.command("I")
+            self.i_label.config(text=i_line)
+            if "TRIP" in i_line:
+                self._set_crush_ui(False)
+        except RuntimeError:
+            pass
         self._poll_job = self.after(300, self._poll_ir)
 
-    def _on_pwm_slide(self, _value):
-        pct = float(self.pwm_var.get())
-        self.pwm_entry.delete(0, tk.END)
-        self.pwm_entry.insert(0, f"{pct:.1f}")
-        self._update_est_v(pct)
+    def _on_servo_slide(self, _value):
+        deg = float(self.servo_var.get())
+        self.servo_entry.delete(0, tk.END)
+        self.servo_entry.insert(0, f"{deg:.1f}")
 
-    def _update_est_v(self, pct):
-        est = 24.0 * pct / 100.0
-        self.est_v_label.config(
-            text=f"估算母线等效: 24V × {pct:.1f}% = {est:.2f} V（仅参考，请以万用表为准）"
-        )
-
-    def apply_pwm(self):
+    def apply_servo(self):
         try:
-            pct = float(self.pwm_entry.get())
+            deg = float(self.servo_entry.get())
         except ValueError:
-            messagebox.showwarning("PWM", "请输入数字")
+            messagebox.showwarning("舵机", "请输入数字")
             return
-        pct = max(0.0, min(100.0, pct))
-        self.pwm_var.set(pct)
-        self._update_est_v(pct)
+        deg = max(0.0, min(180.0, deg))
+        self.servo_var.set(deg)
         if not self.bench.connected:
-            messagebox.showinfo("PWM", f"未连接，本地记录占空比 {pct:.2f}%")
+            messagebox.showinfo("舵机", f"未连接，本地记录角度 {deg:.1f}°")
             return
         try:
-            reply = self.bench.command(f"PWM {pct:.4f}")
-            self.pwm_reply.config(text=reply)
+            reply = self.bench.command(f"SERVO {deg:.2f}")
+            self.servo_reply.config(text=reply)
         except Exception as exc:
-            messagebox.showerror("PWM", str(exc))
+            messagebox.showerror("舵机", str(exc))
 
     def send_simple(self, cmd):
         if not self.bench.connected:
             messagebox.showwarning("电机", "请先连接串口")
             return
         try:
-            self.bench.command(cmd)
+            reply = self.bench.command(cmd)
         except Exception as exc:
             messagebox.showerror(cmd, str(exc))
+            return
+        if cmd in ("PRESS", "RELEASE"):
+            self.servo_reply.config(text=reply)
 
-    def set_ir_pin(self):
-        if not self.bench.connected:
-            messagebox.showwarning("红外", "请先连接串口")
-            return
-        try:
-            gpio = int(self.ir_gpio_var.get())
-        except ValueError:
-            messagebox.showwarning("红外", "GPIO 请输入整数")
-            return
-        try:
-            line = self.bench.command(f"IRPIN {gpio}")
-            self.ir_label.config(text=line)
-        except Exception as exc:
-            messagebox.showerror("红外", str(exc))
+    def _set_crush_ui(self, on):
+        self._crush_on = bool(on)
+        self.crush_btn.config(text="粉碎：开" if self._crush_on else "粉碎：关")
 
-    def scan_ir(self):
+    def _crush_dir(self, cmd):
         if not self.bench.connected:
-            messagebox.showwarning("红外", "请先连接串口")
+            messagebox.showwarning("粉碎", "请先连接串口")
             return
-        messagebox.showinfo("扫描", "手遮挡/移开红外，点确定后开始扫描（对比两次结果找变化的 GPIO）。")
         try:
-            a = self.bench.command("IRSCAN")
+            reply = self.bench.command(cmd)
         except Exception as exc:
-            messagebox.showerror("扫描", str(exc))
+            messagebox.showerror(cmd, str(exc))
             return
-        messagebox.showinfo("扫描", "再改变一次红外状态，点确定做第二次扫描。")
-        try:
-            b = self.bench.command("IRSCAN")
-        except Exception as exc:
-            messagebox.showerror("扫描", str(exc))
-            return
-        diff = []
-        def parse(scan_line):
-            out = {}
-            if not scan_line.startswith("SCAN "):
-                return out
-            for part in scan_line[5:].split():
-                if ":" not in part:
-                    continue
-                k, v = part.split(":", 1)
-                if v in ("0", "1"):
-                    out[int(k)] = int(v)
-            return out
-        pa, pb = parse(a), parse(b)
-        for k in pa:
-            if k in pb and pa[k] != pb[k]:
-                diff.append(str(k))
-        msg = "第一次:\n" + a + "\n\n第二次:\n" + b
-        if diff:
-            msg += "\n\n变化的 GPIO: " + ", ".join(diff)
-            self.ir_gpio_var.set(diff[0])
+        if cmd == "STOP" or str(reply).startswith("TRIP"):
+            self._set_crush_ui(False)
         else:
-            msg += "\n\n未发现电平变化：检查 CN3 供电/接线，或万用表量分压点电压。"
-        messagebox.showinfo("GPIO 扫描", msg)
+            self._set_crush_ui(True)
 
     def toggle_crush(self):
         if not self.bench.connected:
             messagebox.showwarning("粉碎", "请先连接串口")
             return
-        self._crush_on = not self._crush_on
-        cmd = "CRUSH 1" if self._crush_on else "CRUSH 0"
+        want_on = not self._crush_on
+        cmd = "CRUSH 1" if want_on else "CRUSH 0"
         try:
-            self.bench.command(cmd)
+            reply = self.bench.command(cmd)
         except Exception as exc:
-            self._crush_on = not self._crush_on
             messagebox.showerror("粉碎", str(exc))
             return
-        self.crush_btn.config(text="粉碎：开" if self._crush_on else "粉碎：关")
+        if str(reply).startswith("TRIP"):
+            self._set_crush_ui(False)
+            messagebox.showwarning("过流", reply)
+            return
+        self._set_crush_ui(want_on)
 
     def on_close(self):
         self.disconnect()

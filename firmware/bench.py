@@ -5,18 +5,10 @@
 import sys
 import time
 
-from machine import Pin
-
-from ir_input import (
-    format_ir_line,
-    is_present,
-    make_ir_pin,
-    read_adc,
-    raw_value,
-    scan_gpio,
-)
-from motor import CrushMotor, PressMotor
-from pins import PIN_IR
+from ir_input import format_ir_line, is_present, make_ir_pin, raw_value
+from motor import I_GAIN, I_OVERCURRENT_A, R_SENSE_OHM, CrushMotor, MotorCurrent
+from pins import PIN_CRUSH_IN1, PIN_CRUSH_IN2, PIN_IADC, PIN_IR, PIN_SERVO
+from servo_ctrl import FlushServo
 
 
 def _reply(line):
@@ -35,46 +27,51 @@ def _parse_cmd(line):
     return parts[0].upper(), parts[1:]
 
 
-def _ir_report(ir_gpio, ir_pin):
+def _ir_report(ir_pin):
     raw = raw_value(ir_pin)
-    adc = read_adc(ir_gpio)
     present = is_present(raw)
-    return format_ir_line(ir_gpio, raw, adc, present)
+    return format_ir_line(raw, present)
+
+
+def _current_sample(state):
+    v, a, raw = state["current"].read()
+    line = "I gpio={} raw={} v={:.3f} a={:.2f}".format(
+        state["current"].pin_num, raw, v, a
+    )
+    tripped = None
+    if state["crush"].is_on() and a >= I_OVERCURRENT_A:
+        state["crush"].off()
+        tripped = a
+    return line, tripped
 
 
 def _handle(state, cmd, args):
-    press = state["press"]
+    servo = state["servo"]
     crush = state["crush"]
-    ir_gpio = state["ir_gpio"]
+    current = state["current"]
     ir_pin = state["ir_pin"]
 
     if cmd == "PING":
         _reply("PONG")
     elif cmd == "IR":
-        _reply(_ir_report(ir_gpio, ir_pin))
-    elif cmd == "IRSCAN":
-        _reply("SCAN " + scan_gpio())
-    elif cmd == "IRPIN" and len(args) == 1:
-        ir_gpio = int(args[0])
-        ir_pin = make_ir_pin(ir_gpio)
-        state["ir_gpio"] = ir_gpio
-        state["ir_pin"] = ir_pin
-        _reply("OK IRPIN " + _ir_report(ir_gpio, ir_pin))
-    elif cmd == "PWM" and len(args) == 1:
-        press.set_duty_pct(float(args[0]))
-        _reply(
-            "PWM pct={:.2f} est_v={:.2f}".format(
-                press.duty_pct(), 24.0 * press.duty_pct() / 100.0
-            )
-        )
+        _reply(_ir_report(ir_pin))
+    elif cmd == "SERVO" and len(args) == 1:
+        servo.set_angle(float(args[0]))
+        _reply("OK SERVO {:.1f}".format(servo.angle))
+    elif cmd == "PRESS":
+        servo.press()
+        _reply("OK PRESS {:.1f}".format(servo.angle))
+    elif cmd == "RELEASE":
+        servo.release()
+        _reply("OK RELEASE {:.1f}".format(servo.angle))
     elif cmd == "FWD":
-        press.forward()
+        crush.forward()
         _reply("OK FWD")
     elif cmd == "REV":
-        press.reverse()
+        crush.reverse()
         _reply("OK REV")
     elif cmd == "STOP":
-        press.stop()
+        crush.off()
         _reply("OK STOP")
     elif cmd == "CRUSH" and len(args) == 1:
         if args[0] in ("1", "ON", "on"):
@@ -83,29 +80,44 @@ def _handle(state, cmd, args):
         else:
             crush.off()
             _reply("OK CRUSH OFF")
+    elif cmd == "I" or cmd == "CURRENT":
+        line, tripped = _current_sample(state)
+        if tripped is not None:
+            _reply(line + " TRIP a={:.2f}".format(tripped))
+        else:
+            _reply(line)
     elif cmd == "STATUS":
-        _reply(
-            "pwm={:.2f} ir={} crush={}".format(
-                press.duty_pct(), raw_value(ir_pin), crush.out.value()
-            )
+        i_line, tripped = _current_sample(state)
+        line = "servo={:.1f} ir={} crush={} {}".format(
+            servo.angle,
+            raw_value(ir_pin),
+            1 if crush.is_on() else 0,
+            i_line,
         )
+        if tripped is not None:
+            line += " TRIP"
+        _reply(line)
     else:
         _reply("ERR unknown")
 
 
 def run_bench():
-    ir_gpio = PIN_IR
-    ir_pin = make_ir_pin(ir_gpio)
     state = {
-        "press": PressMotor(),
+        "servo": FlushServo(),
         "crush": CrushMotor(),
-        "ir_gpio": ir_gpio,
-        "ir_pin": ir_pin,
+        "current": MotorCurrent(),
+        "ir_pin": make_ir_pin(),
     }
 
     _reply(
-        "BENCH OK IR={} (no pull-up) IREF=10 H=11 L=12 CRUSH=9 cmds: IR IRSCAN IRPIN <gpio>".format(
-            ir_gpio
+        "BENCH OK IR={} SERVO={} CRUSH={} {} IADC={} Rs={} G={} cmds: IR SERVO <deg> PRESS RELEASE CRUSH I".format(
+            PIN_IR,
+            PIN_SERVO,
+            PIN_CRUSH_IN1,
+            PIN_CRUSH_IN2,
+            PIN_IADC,
+            R_SENSE_OHM,
+            I_GAIN,
         )
     )
 

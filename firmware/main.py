@@ -12,7 +12,7 @@ if _cfg_boot.get("bench_mode"):
 from config import detector_cfg
 from detector import Detector, remain_s
 from ir_input import is_present, make_ir_pin
-from motor import IR_PIN, MOTOR_PAUSE_S, MOTOR_RUN_S, Motor
+from servo_ctrl import PRESS_HOLD_S, SERVO_MOVE_S, FlushServo
 from web import WebServer, start_ap, stop_ap
 
 
@@ -30,8 +30,8 @@ class App:
         self.flush_phase = ""
         self._wait_start_ms = 0
         self._wait_ms = 0
-        self.motor = Motor()
-        self.ir = make_ir_pin(IR_PIN)
+        self.servo = FlushServo()
+        self.ir = make_ir_pin()
 
     def status(self):
         timeout_ms = int(self.cfg["wifi_timeout_s"]) * 1000
@@ -102,20 +102,17 @@ class App:
                 interval = float(self.cfg["flush_interval_s"])
                 for i in range(n):
                     self.flush_phase = "flushing"
-                    self._begin_wait(MOTOR_RUN_S + MOTOR_PAUSE_S + MOTOR_RUN_S)
-                    self.motor.down()
-                    await asyncio.sleep(MOTOR_RUN_S)
-                    self.motor.stop()
-                    await asyncio.sleep(MOTOR_PAUSE_S)
-                    self.motor.up()
-                    await asyncio.sleep(MOTOR_RUN_S)
-                    self.motor.stop()
+                    self._begin_wait(SERVO_MOVE_S + PRESS_HOLD_S + SERVO_MOVE_S)
+                    self.servo.press()
+                    await asyncio.sleep(SERVO_MOVE_S + PRESS_HOLD_S)
+                    self.servo.release()
+                    await asyncio.sleep(SERVO_MOVE_S)
                     if i < n - 1:
                         self.flush_phase = "refill"
                         self._begin_wait(interval)
                         await asyncio.sleep(interval)
             finally:
-                self.motor.stop()
+                self.servo.release()
                 self.flush_phase = ""
                 self._wait_ms = 0
                 self.detector.end_flush(time.ticks_ms())
@@ -135,7 +132,7 @@ class App:
                         await self.flush()
                 except Exception as exc:
                     self.error = str(exc)
-                    self.motor.stop()
+                    self.servo.release()
             await asyncio.sleep_ms(sample_ms)
 
     async def wifi_loop(self):
