@@ -1,6 +1,12 @@
 import asyncio
 import network
+import time
 import ubinascii
+
+
+AP_IP = "192.168.99.1"
+ENGINEER_IP = "192.168.99.99"
+AP_MASK = "255.255.255.0"
 
 
 def make_ssid():
@@ -11,12 +17,23 @@ def make_ssid():
 
 def start_ap():
     ap = network.WLAN(network.AP_IF)
+    try:
+        ap.active(False)
+    except OSError:
+        pass
+    time.sleep_ms(150)
     ap.active(True)
+    time.sleep_ms(150)
     ssid = make_ssid()
-    ap.config(essid=ssid, authmode=network.AUTH_OPEN)
+    ap.config(essid=ssid, channel=6, authmode=network.AUTH_OPEN)
     try:
         ap.config(txpower=8)
     except (ValueError, OSError):
+        pass
+    time.sleep_ms(100)
+    try:
+        ap.ifconfig((AP_IP, AP_MASK, AP_IP, AP_IP))
+    except OSError:
         pass
     return ap, ssid
 
@@ -145,6 +162,10 @@ button{width:100%;border:0;border-radius:12px;padding:11px;background:linear-gra
 <input name="flush_interval_s" type="number" step="0.1" min="0.1" value="__FLUSH_INTERVAL__">
 </div>
 </div>
+<div>
+<div class="lab"><label data-i18n="crushTime">粉碎时间 (秒)</label><button type="button" class="q" onclick="help('crushTime')">?</button></div>
+<input name="crush_s" type="number" step="0.1" min="0" value="__CRUSH_S__">
+</div>
 </div>
 <div class="actions">
 <button type="button" class="btn-reset" onclick="askReset()" data-i18n="reset">重置参数</button>
@@ -172,8 +193,8 @@ var lastFlushPhase="__FLUSH_PHASE__";
 var lastWait=__WAIT_S__;
 var lastHold=__HOLD_REMAIN__;
 var T={
-zh:{title:"自动冲水",live:"实时状态",ir:"红外",irOn:"触发",irOff:"未触发",sense:"感应",trigger:"冲水触发",triggerInstant:"单次",triggerHold:"持续",triggerHoldS:"持续时长 (秒)",leave:"离开后延迟冲水 (秒)",flush:"冲水",flushCount:"冲水次数",flushInterval:"蓄水时间 (秒)",reset:"重置参数",resetOk:"确认重置",cancel:"取消",save:"保存设置",ok:"知道了",idle:"空闲",waitLeave:"等待宠物离开",flushCountdown:"冲水倒计时",flushing:"冲水中",waitRefill:"蓄水时间",confirmOccupy:"持续检测",h_reset:"将把感应和冲水参数恢复为默认值，当前语言保持不变。确定要重置吗？",h_trigger:"单次：红外被触发，就触发冲水流程。持续：红外被持续触发指定的时间，就触发冲水流程。",h_leave:"红外从触发变为未触发后，等待这么多秒再冲水。冲水流程一旦开始，必须完成离开倒计时和冲水后，才会重新检测红外。",h_flushCount:"一次离开后电机冲水的次数。",h_flushInterval:"冲水次数大于 1 时，两次冲水之间等待水箱蓄水的时间。"},
-en:{title:"Auto Flush",live:"Live status",ir:"IR",irOn:"Triggered",irOff:"Not triggered",sense:"Sensing",trigger:"Flush trigger",triggerInstant:"Once",triggerHold:"Hold",triggerHoldS:"Hold time (s)",leave:"Flush delay after leave (s)",flush:"Flush",flushCount:"Flush count",flushInterval:"Refill time (s)",reset:"Reset",resetOk:"Confirm reset",cancel:"Cancel",save:"Save",ok:"OK",idle:"Idle",waitLeave:"Waiting for the pet to leave",flushCountdown:"Flush countdown",flushing:"Flushing",waitRefill:"Refill time",confirmOccupy:"Holding",h_reset:"This restores sensing and flush settings to defaults. Language stays the same. Reset now?",h_trigger:"Once: when IR is triggered, the flush sequence starts. Hold: when IR stays triggered for the specified time, the flush sequence starts.",h_leave:"After IR goes from triggered to idle, wait this long before flushing. Once the flush sequence starts, it must finish before IR is checked again.",h_flushCount:"How many flush cycles after the pet leaves.",h_flushInterval:"When flush count is greater than 1, wait this long between cycles so the tank can refill."}
+zh:{title:"自动冲水",live:"实时状态",ir:"红外",irOn:"触发",irOff:"未触发",sense:"感应",trigger:"冲水触发",triggerInstant:"单次",triggerHold:"持续",triggerHoldS:"持续时长 (秒)",leave:"离开后延迟冲水 (秒)",flush:"冲水",flushCount:"冲水次数",flushInterval:"蓄水时间 (秒)",crushTime:"粉碎时间 (秒)",reset:"重置参数",resetOk:"确认重置",cancel:"取消",save:"保存设置",ok:"知道了",idle:"空闲",waitLeave:"等待宠物离开",flushCountdown:"冲水倒计时",flushing:"冲水中",crushing:"粉碎中",waitRefill:"蓄水时间",confirmOccupy:"持续检测",h_reset:"将把感应和冲水参数恢复为默认值，当前语言保持不变。确定要重置吗？",h_trigger:"单次：红外被触发，就触发冲水流程。持续：红外被持续触发指定的时间，就触发冲水流程。",h_leave:"红外从触发变为未触发后，等待这么多秒再冲水。冲水流程一旦开始，必须完成离开倒计时和冲水后，才会重新检测红外。",h_flushCount:"一次离开后电机冲水的次数。",h_flushInterval:"冲水次数大于 1 时，两次冲水之间等待水箱蓄水的时间。",h_crushTime:"粉碎电机用于粉碎排泄物，方便排入下水道。每冲水一次，都按设定的时长进行粉碎。"},
+en:{title:"Auto Flush",live:"Live status",ir:"IR",irOn:"Triggered",irOff:"Not triggered",sense:"Sensing",trigger:"Flush trigger",triggerInstant:"Once",triggerHold:"Hold",triggerHoldS:"Hold time (s)",leave:"Flush delay after leave (s)",flush:"Flush",flushCount:"Flush count",flushInterval:"Refill time (s)",crushTime:"Crush time (s)",reset:"Reset",resetOk:"Confirm reset",cancel:"Cancel",save:"Save",ok:"OK",idle:"Idle",waitLeave:"Waiting for the pet to leave",flushCountdown:"Flush countdown",flushing:"Flushing",crushing:"Crushing",waitRefill:"Refill time",confirmOccupy:"Holding",h_reset:"This restores sensing and flush settings to defaults. Language stays the same. Reset now?",h_trigger:"Once: when IR is triggered, the flush sequence starts. Hold: when IR stays triggered for the specified time, the flush sequence starts.",h_leave:"After IR goes from triggered to idle, wait this long before flushing. Once the flush sequence starts, it must finish before IR is checked again.",h_flushCount:"How many flush cycles after the pet leaves.",h_flushInterval:"When flush count is greater than 1, wait this long between cycles so the tank can refill.",h_crushTime:"The crush motor breaks down waste so it can go down the drain. After every flush, it runs for the time you set."}
 };
 function wifiText(s){
  s=parseInt(s,10); if(isNaN(s)||s<0)s=0; lastRemain=s;
@@ -254,6 +275,7 @@ function stepText(){
  if(lastState==="occupied") return t.waitLeave;
  if(lastState==="leaving") return withWait(t.flushCountdown,lastWait);
  if(lastState==="flushing"){
+  if(lastFlushPhase==="crushing") return withWait(t.crushing,lastWait);
   if(lastFlushPhase==="refill") return withWait(t.waitRefill,lastWait);
   return withWait(t.flushing,lastWait);
  }
@@ -298,6 +320,7 @@ setInterval(refresh,100);
             "occupied": "等待宠物离开",
             "leaving": "冲水倒计时 " + _fmt1(wait_s) + "s",
             "flushing": "冲水中 " + _fmt1(wait_s) + "s",
+            "crushing": "粉碎中 " + _fmt1(wait_s) + "s",
             "refill": "蓄水时间 " + _fmt1(wait_s) + "s",
             "confirm": "持续检测 " + _fmt1(hold_remain) + "s",
         },
@@ -306,6 +329,7 @@ setInterval(refresh,100);
             "occupied": "Waiting for the pet to leave",
             "leaving": "Flush countdown " + _fmt1(wait_s) + "s",
             "flushing": "Flushing " + _fmt1(wait_s) + "s",
+            "crushing": "Crushing " + _fmt1(wait_s) + "s",
             "refill": "Refill time " + _fmt1(wait_s) + "s",
             "confirm": "Holding " + _fmt1(hold_remain) + "s",
         },
@@ -313,6 +337,8 @@ setInterval(refresh,100);
     pack = names.get(lang) or names["zh"]
     if hold_remain > 0 and raw_state in ("idle", "leaving"):
         step_text = pack["confirm"]
+    elif raw_state == "flushing" and flush_phase == "crushing":
+        step_text = pack["crushing"]
     elif raw_state == "flushing" and flush_phase == "refill":
         step_text = pack["refill"]
     elif raw_state == "leaving":
@@ -339,6 +365,7 @@ setInterval(refresh,100);
         ("__HOLD_ON__", "checked" if mode != "instant" else ""),
         ("__FLUSH_COUNT__", cfg["flush_count"]),
         ("__FLUSH_INTERVAL__", cfg["flush_interval_s"]),
+        ("__CRUSH_S__", cfg.get("crush_s", 15)),
     ):
         page = page.replace(key, str(value))
     return page
@@ -398,6 +425,11 @@ class WebServer:
             parts = line.split(" ")
             method = parts[0] if parts else "GET"
             path = parts[1] if len(parts) > 1 else "/"
+            host = ""
+            for h in text.split("\r\n"):
+                if h.lower().startswith("host:"):
+                    host = h.split(":", 1)[1].strip().split(":")[0]
+                    break
             body = ""
             if method == "POST":
                 length = 0
@@ -410,7 +442,7 @@ class WebServer:
                 if remain > 0:
                     extra = await reader.read(remain)
                     body += extra.decode()
-            await self._respond(writer, method, path, body)
+            await self._respond(writer, method, path, body, host)
         except Exception as exc:
             try:
                 writer.write(b"HTTP/1.1 500 Internal Server Error\r\n\r\n")
@@ -424,8 +456,77 @@ class WebServer:
         except Exception:
             pass
 
-    async def _respond(self, writer, method, path, body):
-        path = path.split("?")[0]
+    def _is_engineer_req(self, path, host, query=""):
+        host = (host or "").split(":")[0]
+        if host == ENGINEER_IP:
+            return True
+        if "m=test" in (query or ""):
+            return True
+        p = (path or "/").split("?")[0]
+        if len(p) > 1 and p.endswith("/"):
+            p = p[:-1]
+        p = p.lower()
+        return p in ("/test", "/eng", "/engineer") or p.startswith("/test/")
+
+    async def _write_bytes(self, writer, status, content_type, data):
+        writer.write(
+            status
+            + b"\r\nContent-Type: "
+            + content_type
+            + b"\r\nCache-Control: no-store\r\nConnection: close\r\nContent-Length: "
+            + str(len(data)).encode()
+            + b"\r\n\r\n"
+            + data
+        )
+        await writer.drain()
+
+    async def _respond_engineer(self, writer, method, path, body):
+        self.app.enter_engineer()
+        p = (path or "/").split("?")[0]
+        is_cmd = method == "POST" and (
+            "/cmd" in p or p.endswith("/test") or "m=test" in path
+        )
+        is_status = "/status" in p
+        if is_cmd:
+            form = _parse_form(body)
+            cmd = (form.get("cmd") or body or "").strip()
+            if cmd:
+                try:
+                    self.app.bench_cmd(cmd)
+                except Exception as exc:
+                    self.app.error = str(exc)
+        if is_cmd or is_status:
+            try:
+                payload = self.app.engineer_status_json().encode()
+            except Exception as exc:
+                payload = ('{"error":"%s"}' % str(exc).replace('"', "")).encode()
+            await self._write_bytes(
+                writer, b"HTTP/1.1 200 OK", b"application/json", payload
+            )
+            return
+        try:
+            from test_web import render_test_page
+
+            page = render_test_page({})
+            data = page.encode()
+        except Exception as exc:
+            data = (
+                "<!DOCTYPE html><meta charset=utf-8><title>test</title>"
+                "<p>engineer page error: %s</p>" % _html_escape(exc)
+            ).encode()
+        await self._write_bytes(
+            writer, b"HTTP/1.1 200 OK", b"text/html; charset=utf-8", data
+        )
+
+    async def _respond(self, writer, method, path, body, host=""):
+        raw = path or "/"
+        query = raw.split("?", 1)[1] if "?" in raw else ""
+        path = raw.split("?")[0]
+        if self._is_engineer_req(path, host, query):
+            await self._respond_engineer(writer, method, raw, body)
+            return
+        if self.app.engineer_mode:
+            self.app.leave_engineer()
         if method == "POST" and path.startswith("/lang"):
             form = _parse_form(body)
             self.app.apply_form({"lang": form.get("lang", "zh")})

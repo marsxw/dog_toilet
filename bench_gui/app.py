@@ -7,8 +7,8 @@
   pip install -r requirements.txt
   python app.py
 
-设备端：上传 firmware 后，在板子 config.json 里设 "bench_mode": true 并复位；
-或单独运行 firmware/bench.py。串口 115200。
+设备端上电默认客户模式。本界面通过串口发送 ENG 进入工程师模式（断电后恢复客户模式）。
+串口 115200。
 """
 
 import threading
@@ -44,8 +44,8 @@ class SerialBench:
             self.close()
             raise RuntimeError(
                 "设备无响应。请确认：\n"
-                "1) 已上传最新 firmware（含 bench.py、main.py）；\n"
-                "2) 板子 config.json 含 \"bench_mode\": true 后复位，或运行 bench.py；\n"
+                "1) 已上传最新 firmware（含 main.py、bench.py）；\n"
+                "2) 板子已启动客户模式（上电默认）；\n"
                 "3) 串口未被 Thonny/串口监视器占用。"
             )
 
@@ -134,13 +134,22 @@ class App(tk.Tk):
         self.conn_label = ttk.Label(frm, text="未连接", foreground="#888")
         self.conn_label.pack(anchor=tk.W)
 
+        mode_fr = ttk.Frame(frm)
+        mode_fr.pack(fill=tk.X, pady=(4, 4))
+        self.mode_label = ttk.Label(mode_fr, text="模式：—")
+        self.mode_label.pack(side=tk.LEFT)
+        ttk.Button(mode_fr, text="进入工程师模式", command=self.enter_engineer).pack(
+            side=tk.LEFT, padx=6
+        )
+        ttk.Button(mode_fr, text="返回客户模式", command=self.leave_engineer).pack(side=tk.LEFT)
+
         ir_fr = ttk.LabelFrame(frm, text="红外输入 (GPIO1 数字)", padding=8)
         ir_fr.pack(fill=tk.X, pady=8)
         self.ir_label = ttk.Label(ir_fr, text="—", wraplength=380)
         self.ir_label.pack(anchor=tk.W)
         ttk.Label(
             ir_fr,
-            text="固定读 GPIO1。遮住应为 raw=0、present=1；移开应为 raw=1、present=0。",
+            text="固定读 GPIO1。遮住应为 raw=1、present=1；移开应为 raw=0、present=0。",
             wraplength=380,
             foreground="#555",
         ).pack(anchor=tk.W, pady=(4, 0))
@@ -171,8 +180,19 @@ class App(tk.Tk):
         ttk.Button(servo_btns, text="回位 RELEASE", command=lambda: self.send_simple("RELEASE")).pack(
             side=tk.LEFT, padx=4
         )
-        self.servo_reply = ttk.Label(servo_fr, text="默认回位 20°、冲水 90°，可在 firmware/servo_ctrl.py 改。", foreground="#006")
-        self.servo_reply.grid(row=2, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
+        save_fr = ttk.Frame(servo_fr)
+        save_fr.grid(row=2, column=0, columnspan=4, sticky=tk.W, pady=(8, 0))
+        ttk.Label(save_fr, text="回位").pack(side=tk.LEFT)
+        self.home_entry = ttk.Entry(save_fr, width=6)
+        self.home_entry.insert(0, "0")
+        self.home_entry.pack(side=tk.LEFT, padx=4)
+        ttk.Label(save_fr, text="按下").pack(side=tk.LEFT)
+        self.press_entry = ttk.Entry(save_fr, width=6)
+        self.press_entry.insert(0, "70")
+        self.press_entry.pack(side=tk.LEFT, padx=4)
+        ttk.Button(save_fr, text="保存角度", command=self.save_servo_cfg).pack(side=tk.LEFT, padx=6)
+        self.servo_reply = ttk.Label(servo_fr, text="默认回位 0°、按下 70°，工程师模式可保存到板子。", foreground="#006")
+        self.servo_reply.grid(row=3, column=0, columnspan=4, sticky=tk.W, pady=(6, 0))
 
         crush_fr = ttk.LabelFrame(frm, text="粉碎电机 (GPIO11 IN1 / GPIO12 IN2)", padding=8)
         crush_fr.pack(fill=tk.X, pady=8)
@@ -183,6 +203,12 @@ class App(tk.Tk):
         ttk.Button(bf, text="正转 FWD", command=lambda: self._crush_dir("FWD")).pack(side=tk.LEFT, padx=4)
         ttk.Button(bf, text="反转 REV", command=lambda: self._crush_dir("REV")).pack(side=tk.LEFT, padx=4)
         ttk.Button(bf, text="停止 STOP", command=lambda: self._crush_dir("STOP")).pack(side=tk.LEFT, padx=4)
+        dir_fr = ttk.Frame(crush_fr)
+        dir_fr.pack(anchor=tk.W, pady=(8, 0))
+        self.crush_dir_var = tk.StringVar(value="fwd")
+        ttk.Radiobutton(dir_fr, text="选用正转", variable=self.crush_dir_var, value="fwd").pack(side=tk.LEFT)
+        ttk.Radiobutton(dir_fr, text="选用反转", variable=self.crush_dir_var, value="rev").pack(side=tk.LEFT, padx=8)
+        ttk.Button(dir_fr, text="保存方向", command=self.save_crush_dir).pack(side=tk.LEFT, padx=6)
 
         i_fr = ttk.LabelFrame(frm, text="电机电流 (GPIO3 ADC，0.1Ω × 10.5)", padding=8)
         i_fr.pack(fill=tk.X, pady=8)
@@ -197,7 +223,7 @@ class App(tk.Tk):
 
         note = ttk.Label(
             frm,
-            text="测好舵机角度后，把 firmware/servo_ctrl.py 里的 RELEASE_DEG / PRESS_DEG 改成你的值。",
+            text="回位/按下角度点「保存角度」后写入板子 config.json，断电仍有效。",
             wraplength=420,
         )
         note.pack(anchor=tk.W, pady=(12, 0))
@@ -237,10 +263,16 @@ class App(tk.Tk):
                 self.bench.command("RELEASE")
         except RuntimeError:
             pass
+        try:
+            if self.bench.connected:
+                self.bench.command("CUST")
+        except RuntimeError:
+            pass
         self.bench.close()
         self.conn_label.config(text="未连接", foreground="#888")
         self.ir_label.config(text="—")
         self.i_label.config(text="—")
+        self.mode_label.config(text="模式：—")
 
     def _start_poll(self):
         self._poll_ir()
@@ -265,12 +297,67 @@ class App(tk.Tk):
                 self._set_crush_ui(False)
         except RuntimeError:
             pass
+        try:
+            mode = self.bench.command("MODE")
+            self._set_mode_label(mode)
+        except RuntimeError:
+            pass
         self._poll_job = self.after(300, self._poll_ir)
+
+    def _set_mode_label(self, mode_line):
+        text = str(mode_line or "")
+        if "engineer" in text:
+            self.mode_label.config(text="模式：工程师", foreground="#b45309")
+        elif "customer" in text:
+            self.mode_label.config(text="模式：客户", foreground="#080")
+        else:
+            self.mode_label.config(text="模式：" + text)
+
+    def enter_engineer(self):
+        if not self.bench.connected:
+            messagebox.showwarning("模式", "请先连接串口")
+            return
+        try:
+            reply = self.bench.command("ENG")
+            self._set_mode_label("MODE engineer" if "ENGINEER" in reply else reply)
+        except Exception as exc:
+            messagebox.showerror("工程师模式", str(exc))
+
+    def leave_engineer(self):
+        if not self.bench.connected:
+            messagebox.showwarning("模式", "请先连接串口")
+            return
+        try:
+            self.bench.command("STOP")
+        except RuntimeError:
+            pass
+        try:
+            reply = self.bench.command("CUST")
+            self._set_mode_label("MODE customer" if "CUSTOMER" in reply else reply)
+            self._set_crush_ui(False)
+        except Exception as exc:
+            messagebox.showerror("客户模式", str(exc))
 
     def _on_servo_slide(self, _value):
         deg = float(self.servo_var.get())
         self.servo_entry.delete(0, tk.END)
         self.servo_entry.insert(0, f"{deg:.1f}")
+
+    def save_servo_cfg(self):
+        if not self.bench.connected:
+            messagebox.showwarning("舵机", "请先连接串口")
+            return
+        try:
+            home = float(self.home_entry.get())
+            press = float(self.press_entry.get())
+        except ValueError:
+            messagebox.showwarning("舵机", "请输入数字")
+            return
+        try:
+            reply = self.bench.command(f"SERVOCFG {home:.2f} {press:.2f}")
+            self.servo_reply.config(text=reply)
+        except Exception as exc:
+            messagebox.showerror("舵机", str(exc))
 
     def apply_servo(self):
         try:
@@ -300,6 +387,18 @@ class App(tk.Tk):
             return
         if cmd in ("PRESS", "RELEASE"):
             self.servo_reply.config(text=reply)
+
+    def save_crush_dir(self):
+        if not self.bench.connected:
+            messagebox.showwarning("粉碎", "请先连接串口")
+            return
+        d = self.crush_dir_var.get() or "fwd"
+        try:
+            reply = self.bench.command("CRUSHDIR " + d)
+        except Exception as exc:
+            messagebox.showerror("粉碎", str(exc))
+            return
+        messagebox.showinfo("粉碎", reply)
 
     def _set_crush_ui(self, on):
         self._crush_on = bool(on)

@@ -43,23 +43,27 @@ cd c:\Users\Siven\Desktop\dog_toilet\firmware
 ..\venv\Scripts\mpremote.exe connect COM3 cp config.py :config.py
 ..\venv\Scripts\mpremote.exe connect COM3 cp detector.py :detector.py
 ..\venv\Scripts\mpremote.exe connect COM3 cp web.py :web.py
+..\venv\Scripts\mpremote.exe connect COM3 cp test_web.py :test_web.py
 ..\venv\Scripts\mpremote.exe connect COM3 cp ir_input.py :ir_input.py
-
-# 电机调试：用 bench 配置（含 "bench_mode": true）
-..\venv\Scripts\mpremote.exe connect COM3 cp config.bench.json :config.json
-
-# 正式自动冲水：去掉上一行，改传自己的 config.json，或删板子 config.json 用默认参数
 
 ..\venv\Scripts\mpremote.exe connect COM3 reset
 ```
 
 若提示 `could not enter raw repl`，先 `soft-reset` 再 `cp`；若仍失败，按一下板子复位后重试。
 
-## 电机调试界面
+## 客户模式 / 工程师模式
+
+上电、断电重启后**默认客户模式**（自动感应冲水）。工程师模式只存在内存里，断电即回到客户模式。
+
+1. 手机连接热点 `toilet_` + MAC 后 6 位（开放、无密码）。
+2. **客户配置页：** [http://192.168.99.1](http://192.168.99.1)
+3. **工程师测试页：** [http://192.168.99.1/test](http://192.168.99.1/test)  
+   ESP32 热点只有一个本机 IP（`192.168.99.1`），工程师入口是该地址下的 `/test`。若写成 `192.168.99.99` 默认到不了板子。
+4. **电脑 GUI：** 串口连接后会发 `ENG` 进入工程师模式；也可点「返回客户模式」（`CUST`）。断开串口会回到客户模式。
 
 ```powershell
 .\venv\Scripts\Activate.ps1
 python bench_gui\app.py
 ```
 
-板子 `config.json` 中 `"bench_mode": true` 时为串口调试；测完改回 `false` 恢复自动冲水。
+WiFi 默认开启 30 分钟，超时关闭后需重新上电。

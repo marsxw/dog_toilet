@@ -75,13 +75,22 @@ class MotorCurrent:
 
 
 class CrushMotor:
-    def __init__(self, pin_in1=PIN_CRUSH_IN1, pin_in2=PIN_CRUSH_IN2):
+    def __init__(self, pin_in1=PIN_CRUSH_IN1, pin_in2=PIN_CRUSH_IN2, direction="fwd"):
         self.in1 = Pin(int(pin_in1), Pin.OUT)
         self.in2 = Pin(int(pin_in2), Pin.OUT)
+        self.set_direction(direction)
         self.off()
 
+    def set_direction(self, direction):
+        d = str(direction or "fwd").lower()
+        self.direction = "rev" if d in ("rev", "reverse", "1", "b") else "fwd"
+        return self.direction
+
     def on(self):
-        self.forward()
+        if self.direction == "rev":
+            self.reverse()
+        else:
+            self.forward()
 
     def forward(self):
         self.in2.value(0)

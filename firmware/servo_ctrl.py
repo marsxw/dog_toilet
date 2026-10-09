@@ -3,8 +3,8 @@ from machine import PWM, Pin
 from pins import PIN_SERVO
 
 SERVO_FREQ_HZ = 50
-RELEASE_DEG = 20
-PRESS_DEG = 90
+RELEASE_DEG = 0
+PRESS_DEG = 70
 SERVO_MOVE_S = 1.0
 PRESS_HOLD_S = 1.0
 
@@ -43,6 +43,10 @@ class FlushServo(Servo):
         super().__init__(pin, release_deg)
         self.release_deg = float(release_deg)
         self.press_deg = float(press_deg)
+
+    def set_limits(self, release_deg, press_deg):
+        self.release_deg = max(0.0, min(180.0, float(release_deg)))
+        self.press_deg = max(0.0, min(180.0, float(press_deg)))
 
     def press(self):
         self.set_angle(self.press_deg)

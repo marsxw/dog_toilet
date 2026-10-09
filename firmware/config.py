@@ -11,7 +11,10 @@ DEFAULTS = {
     "wifi_timeout_s": 1800,
     "sample_ms": 50,
     "lang": "zh",
-    "bench_mode": False,
+    "release_deg": 0,
+    "press_deg": 70,
+    "crush_dir": "fwd",
+    "crush_s": 15,
 }
 
 
@@ -50,15 +53,18 @@ def sanitize(cfg):
     out["sample_ms"] = int(_clamp_num(out.get("sample_ms", 50), 20, 500, 50))
     lang = str(out.get("lang") or "zh").lower()
     out["lang"] = "en" if lang.startswith("en") else "zh"
-    out["bench_mode"] = bool(out.get("bench_mode"))
+    out.pop("bench_mode", None)
+    out["release_deg"] = _clamp_num(out.get("release_deg", 0), 0, 180, 0)
+    out["press_deg"] = _clamp_num(out.get("press_deg", 70), 0, 180, 70)
+    d = str(out.get("crush_dir") or "fwd").lower()
+    out["crush_dir"] = "rev" if d in ("rev", "reverse", "1", "b") else "fwd"
+    out["crush_s"] = _clamp_num(out.get("crush_s", 15), 0, 300, 15)
     for key in (
         "threshold_cm",
         "confirm_window_s",
         "confirm_count",
         "cooldown_s",
         "servo_pin",
-        "press_deg",
-        "release_deg",
         "press_hold_s",
         "invalid_mm",
         "motor_run_s",

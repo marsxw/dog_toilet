@@ -2,8 +2,8 @@ from machine import Pin
 
 from pins import PIN_IR
 
-# GPIO1 数字输入。触发（宠物在）= 低电平；未触发 = 高电平。不要内部上拉。
-IR_ACTIVE_LOW = True
+# GPIO1 数字输入。实测：触发（宠物在）= 高电平；未触发 = 低电平。不要内部上拉。
+IR_ACTIVE_LOW = False
 
 
 def make_ir_pin():

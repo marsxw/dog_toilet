@@ -63,6 +63,9 @@ class Detector:
             return None
 
         if self.state == LEAVING:
+            if present:
+                self._enter_occupied(now_ms)
+                return None
             leave_ms = int(float(self.cfg["leave_delay_s"]) * 1000)
             if now_ms - self._leave_start_ms >= leave_ms:
                 self.state = FLUSHING
