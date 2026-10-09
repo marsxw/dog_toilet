@@ -40,6 +40,8 @@ class App:
         self.ir = make_ir_pin()
         self.bench = Bench(self.servo, self.crush, self.current, self.ir)
         self.engineer_mode = False
+        self._crush_remain_ms = 0
+        self._crush_last_ms = 0
 
     def enter_engineer(self):
         self.engineer_mode = True
@@ -48,6 +50,7 @@ class App:
         was = self.engineer_mode
         self.engineer_mode = False
         self.bench.idle_outputs()
+        self._crush_stop()
         if was:
             self.detector.end_flush(time.ticks_ms())
             self._flushing = False
@@ -208,19 +211,55 @@ class App:
         self.servo.set_limits(self.cfg["release_deg"], self.cfg["press_deg"])
         self.crush.set_direction(self.cfg["crush_dir"])
 
+    def _crush_start(self, seconds):
+        add_ms = int(float(seconds) * 1000)
+        if add_ms <= 0:
+            return
+        now = time.ticks_ms()
+        if self._crush_remain_ms <= 0:
+            self._crush_last_ms = now
+            self._crush_remain_ms = 0
+        self._crush_remain_ms += add_ms
+        self.crush.set_direction(self.cfg.get("crush_dir", "fwd"))
+        self.crush.on()
+
+    def _crush_stop(self):
+        self._crush_remain_ms = 0
+        self._crush_last_ms = 0
+        self.crush.off()
+
+    def _crush_poll(self):
+        if self.engineer_mode:
+            return
+        if self._crush_remain_ms <= 0:
+            if self.crush.is_on():
+                self.crush.off()
+            return
+        now = time.ticks_ms()
+        elapsed = time.ticks_diff(now, self._crush_last_ms)
+        if elapsed > 0:
+            self._crush_remain_ms -= elapsed
+            self._crush_last_ms = now
+        if self._crush_remain_ms <= 0:
+            self._crush_stop()
+            return
+        if not self.crush.is_on():
+            self.crush.on()
+            return
+        try:
+            _v, amps, _raw = self.current.read(8)
+            if amps >= I_OVERCURRENT_A:
+                self._crush_stop()
+                self.error = "crush overcurrent {:.2f}A".format(amps)
+        except Exception:
+            pass
+
     async def _sleep_flush(self, seconds):
         end = time.ticks_add(time.ticks_ms(), int(float(seconds) * 1000))
         while time.ticks_diff(end, time.ticks_ms()) > 0:
             if self.engineer_mode:
                 return False
-            if self.crush.is_on():
-                try:
-                    _v, amps, _raw = self.current.read(8)
-                    if amps >= I_OVERCURRENT_A:
-                        self.crush.off()
-                        self.error = "crush overcurrent {:.2f}A".format(amps)
-                except Exception:
-                    pass
+            self._crush_poll()
             remain = time.ticks_diff(end, time.ticks_ms())
             await asyncio.sleep_ms(min(80, max(10, remain)))
         return True
@@ -232,33 +271,26 @@ class App:
                 n = int(self.cfg["flush_count"])
                 interval = float(self.cfg["flush_interval_s"])
                 crush_s = float(self.cfg.get("crush_s", 15))
-                self.crush.set_direction(self.cfg.get("crush_dir", "fwd"))
                 for i in range(n):
                     if self.engineer_mode:
                         break
                     self.flush_phase = "flushing"
                     self._begin_wait(SERVO_MOVE_S + PRESS_HOLD_S + SERVO_MOVE_S)
                     self.servo.press()
+                    self._crush_start(crush_s)
                     if not await self._sleep_flush(SERVO_MOVE_S + PRESS_HOLD_S):
                         break
                     self.servo.release()
                     if not await self._sleep_flush(SERVO_MOVE_S):
                         break
-                    if crush_s > 0:
-                        self.flush_phase = "crushing"
-                        self._begin_wait(crush_s)
-                        self.crush.on()
-                        ok = await self._sleep_flush(crush_s)
-                        self.crush.off()
-                        if not ok:
-                            break
                     if i < n - 1:
                         self.flush_phase = "refill"
                         self._begin_wait(interval)
                         if not await self._sleep_flush(interval):
                             break
             finally:
-                self.crush.off()
+                if self.engineer_mode:
+                    self._crush_stop()
                 if not self.engineer_mode:
                     self.servo.release()
                 self.flush_phase = ""
@@ -270,6 +302,7 @@ class App:
         await asyncio.sleep_ms(200)
         sample_ms = int(self.cfg["sample_ms"])
         while True:
+            self._crush_poll()
             if not self._flushing and not self.engineer_mode:
                 try:
                     present = is_present(self.ir.value())
